@@ -1,0 +1,24 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      activecampaignUrl:
+        type: string
+        title: ActiveCampaign API URL
+        description: "Your account URL (e.g., https://youraccountname.api-us1.com). Found at Settings > Developer."
+      activecampaignApiKey:
+        type: string
+        title: ActiveCampaign API Key
+        description: "Your API key. Found at Settings > Developer."
+    required:
+      - activecampaignUrl
+      - activecampaignApiKey
+  commandFunction: |-
+    (config) => ({
+      command: 'mcp-activecampaign',
+      env: {
+        ACTIVECAMPAIGN_URL: config.activecampaignUrl,
+        ACTIVECAMPAIGN_API_KEY: config.activecampaignApiKey
+      }
+    })
