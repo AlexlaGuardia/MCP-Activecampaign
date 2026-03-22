@@ -1,14 +1,14 @@
 ---
-title: "I Built the First MCP Server for ActiveCampaign — Here's What I Learned"
+title: "Zero to 33 Tools: Building the First MCP Server for ActiveCampaign"
 published: false
 description: "33 tools for the ActiveCampaign API, built with Python and the official MCP SDK. Contacts, deals, automations, tags, pipelines, campaigns, and more — directly from Claude, Cursor, or any MCP client."
 tags: mcp, ai, python, activecampaign
 cover_image:
 ---
 
-ActiveCampaign has 185,000 customers. The MCP ecosystem has 19,000+ servers. When I searched for an ActiveCampaign MCP server, I found exactly zero. Not a bad one, not an incomplete one — nothing.
+I searched GitHub, npm, PyPI, and every MCP registry I could find for an ActiveCampaign MCP server. Zero results. Not a bad one, not an incomplete one — nothing. For a platform with 185,000 paying customers and a full-featured API, that gap felt worth filling.
 
-So I built the first one.
+So I built it from scratch: 33 tools covering contacts, deals, automations, tags, pipelines, campaigns, custom fields, and webhooks.
 
 ## What It Does
 
