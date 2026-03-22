@@ -3,7 +3,7 @@ title: "Zero to 33 Tools: Building the First MCP Server for ActiveCampaign"
 published: false
 description: "33 tools for the ActiveCampaign API, built with Python and the official MCP SDK. Contacts, deals, automations, tags, pipelines, campaigns, and more — directly from Claude, Cursor, or any MCP client."
 tags: mcp, ai, python, activecampaign
-cover_image:
+cover_image: https://raw.githubusercontent.com/AlexlaGuardia/MCP-Activecampaign/main/cover.png
 ---
 
 I searched GitHub, npm, PyPI, and every MCP registry I could find for an ActiveCampaign MCP server. Zero results. Not a bad one, not an incomplete one — nothing. For a platform with 185,000 paying customers and a full-featured API, that gap felt worth filling.
