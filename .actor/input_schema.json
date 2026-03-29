@@ -1,0 +1,24 @@
+{
+    "title": "ActiveCampaign MCP Server",
+    "description": "Production-grade MCP server for the ActiveCampaign API with 33 tools for contacts, deals, automations, tags, pipelines, campaigns, and more.",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "activecampaignUrl": {
+            "title": "Account URL",
+            "description": "Your ActiveCampaign account URL (e.g., https://yourname.api-us1.com)",
+            "type": "string",
+            "editor": "textfield",
+            "prefill": ""
+        },
+        "activecampaignApiKey": {
+            "title": "API Key",
+            "description": "Your ActiveCampaign API key. Find it at Settings > Developer.",
+            "type": "string",
+            "editor": "textfield",
+            "isSecret": true,
+            "prefill": ""
+        }
+    },
+    "required": ["activecampaignUrl", "activecampaignApiKey"]
+}

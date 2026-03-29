@@ -1,0 +1,15 @@
+{
+    "actorSpecification": 1,
+    "name": "mcp-activecampaign",
+    "title": "ActiveCampaign MCP Server",
+    "version": "0.1",
+    "buildTag": "latest",
+    "dockerfile": "./Dockerfile",
+    "readme": "../README.md",
+    "input": "./input_schema.json",
+    "defaultMemoryMbytes": 512,
+    "minMemoryMbytes": 256,
+    "maxMemoryMbytes": 2048,
+    "usesStandbyMode": true,
+    "webServerMcpPath": "/mcp"
+}
