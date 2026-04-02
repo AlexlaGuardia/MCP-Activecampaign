@@ -1,4 +1,5 @@
 # mcp-activecampaign
+[![MCPize](https://mcpize.com/badge/@AlexlaGuardia/activecampaign)](https://mcpize.com/mcp/activecampaign)
 
 Production-grade MCP server for the ActiveCampaign API — **33 tools** for contacts, deals, automations, tags, pipelines, campaigns, custom fields, accounts, and webhooks.
 
@@ -56,6 +57,16 @@ export ACTIVECAMPAIGN_URL="https://youraccountname.api-us1.com"
 export ACTIVECAMPAIGN_API_KEY="your-api-key"
 mcp-activecampaign
 ```
+
+## Connect via MCPize
+
+Use this MCP server instantly with no local installation:
+
+```bash
+npx -y mcpize connect @AlexlaGuardia/activecampaign --client claude
+```
+
+Or connect at: **https://mcpize.com/mcp/activecampaign**
 
 ## Tools (33)
 
