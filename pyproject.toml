@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mcp-activecampaign"
 version = "0.2.0"
-description = "Production-grade MCP server for the ActiveCampaign API — 51 tools for contacts, deals, automations, tags, pipelines, campaigns, notes, tasks, event tracking, ecommerce, and bulk operations."
+description = "Production-grade MCP server for the ActiveCampaign API — 65 tools for contacts, deals, automations, tags, pipelines, campaigns, notes, tasks, event tracking, ecommerce, lead scoring, segments, forms, goals, and templates."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

@@ -1,4 +1,4 @@
-"""MCP server for the ActiveCampaign API — 51 tools."""
+"""MCP server for the ActiveCampaign API — 65 tools."""
 
 import json
 import os
@@ -12,9 +12,10 @@ mcp = FastMCP(
     "mcp-activecampaign",
     instructions=(
         "Production-grade MCP server for the ActiveCampaign API. "
-        "51 tools for contacts, deals, tags, lists, automations, "
+        "65 tools for contacts, deals, tags, lists, automations, "
         "pipelines, campaigns, custom fields, accounts, webhooks, "
-        "notes, tasks, event tracking, ecommerce, and bulk operations."
+        "notes, tasks, event tracking, ecommerce, bulk operations, "
+        "lead scoring, segments, forms, goals, and templates."
     ),
 )
 
@@ -1214,6 +1215,356 @@ async def bulk_import_contacts(contacts_json: str, list_id: str = "", tag_id: st
         "queued": len(payload["contacts"]),
         "message": data.get("message", "Bulk import queued."),
     })
+
+
+# ============================================================================
+# SCORES (lead scoring -- AC's signature feature)
+# ============================================================================
+
+
+@mcp.tool()
+async def list_scores(limit: int = 20, offset: int = 0) -> str:
+    """List all scoring rules configured in the account -- lead scores, deal scores, etc."""
+    ac = get_client()
+    data = await ac.get("/scores", params={"limit": min(limit, 100), "offset": offset})
+    scores = []
+    for s in data.get("scores", []):
+        scores.append({
+            "id": s.get("id", ""),
+            "name": s.get("name", ""),
+            "status": s.get("status", ""),
+            "type": s.get("reltype", ""),
+            "created_at": s.get("cdate", ""),
+            "updated_at": s.get("mdate", ""),
+        })
+    return _fmt({"total": _total(data), "scores": scores})
+
+
+@mcp.tool()
+async def get_contact_score(contact_id: str) -> str:
+    """Get all score values for a contact -- see how hot/qualified a lead is."""
+    ac = get_client()
+    data = await ac.get(
+        "/contactScores",
+        params={"filters[contact]": contact_id, "limit": 100},
+    )
+    scores = []
+    for s in data.get("contactScores", []):
+        scores.append({
+            "score_id": s.get("score", ""),
+            "score_value": s.get("scoreValue", "0"),
+            "contact_id": s.get("contact", ""),
+            "created_at": s.get("cdate", ""),
+            "updated_at": s.get("mdate", ""),
+        })
+    return _fmt({"contact_id": contact_id, "scores": scores})
+
+
+@mcp.tool()
+async def get_deal_score(deal_id: str) -> str:
+    """Get score values for a deal -- win probability and deal quality metrics."""
+    ac = get_client()
+    data = await ac.get(
+        "/dealScores",
+        params={"filters[deal]": deal_id, "limit": 100},
+    )
+    scores = []
+    for s in data.get("dealScores", []):
+        scores.append({
+            "score_id": s.get("score", ""),
+            "score_value": s.get("scoreValue", "0"),
+            "deal_id": s.get("deal", ""),
+        })
+    return _fmt({"deal_id": deal_id, "scores": scores})
+
+
+# ============================================================================
+# SEGMENTS (saved searches / advanced filters)
+# ============================================================================
+
+
+@mcp.tool()
+async def list_segments(limit: int = 20, offset: int = 0) -> str:
+    """List saved segments -- reusable contact filters for targeted campaigns and automations."""
+    ac = get_client()
+    data = await ac.get("/segments", params={"limit": min(limit, 100), "offset": offset})
+    segments = []
+    for s in data.get("segments", []):
+        segments.append({
+            "id": s.get("id", ""),
+            "name": s.get("name", ""),
+            "logic": s.get("logic", ""),
+            "hidden": s.get("hidden", "0"),
+            "created_at": s.get("cdate", ""),
+            "updated_at": s.get("mdate", ""),
+        })
+    return _fmt({"total": _total(data), "segments": segments})
+
+
+@mcp.tool()
+async def get_segment_contacts(segment_id: str, limit: int = 20, offset: int = 0) -> str:
+    """List contacts in a specific segment -- see who matches the filter criteria."""
+    ac = get_client()
+    # Segments filter contacts via the contacts endpoint
+    data = await ac.get(
+        "/contacts",
+        params={"segmentid": segment_id, "limit": min(limit, 100), "offset": offset},
+    )
+    contacts = []
+    for c in data.get("contacts", []):
+        contacts.append({
+            "id": c["id"],
+            "email": c.get("email", ""),
+            "first_name": c.get("firstName", ""),
+            "last_name": c.get("lastName", ""),
+        })
+    return _fmt({"segment_id": segment_id, "total": _total(data), "contacts": contacts})
+
+
+# ============================================================================
+# CAMPAIGN CREATION & SENDING
+# ============================================================================
+
+
+@mcp.tool()
+async def create_campaign(
+    name: str,
+    list_id: str,
+    subject: str,
+    from_name: str,
+    from_email: str,
+    reply_to: str,
+    html_body: str = "",
+    campaign_type: str = "single",
+) -> str:
+    """Create a new email campaign. campaign_type: single, recurring, split, responder, rss, social."""
+    ac = get_client()
+    body: dict[str, Any] = {
+        "type": campaign_type,
+        "name": name,
+        "sdate": "",
+        "status": "0",
+        "public": "1",
+        "tracklinks": "all",
+        "trackopens": "1",
+        "trackreplies": "0",
+    }
+    # Create the campaign
+    data = await ac.post("/campaigns", json={"campaign": body})
+    c = data.get("campaign", {})
+    campaign_id = c.get("id", "")
+    if not campaign_id:
+        return _fmt({"error": "Failed to create campaign.", "response": data})
+
+    # Set the list
+    await ac.post(
+        f"/campaigns/{campaign_id}/lists",
+        json={"campaignList": {"list": list_id}},
+    )
+
+    # Set the message
+    message: dict[str, Any] = {
+        "fromname": from_name,
+        "fromemail": from_email,
+        "reply2": reply_to,
+        "subject": subject,
+        "format": "mime",
+    }
+    if html_body:
+        message["html"] = html_body
+    await ac.post(
+        f"/campaigns/{campaign_id}/messages",
+        json={"campaignMessage": message},
+    )
+
+    return _fmt({
+        "id": campaign_id,
+        "name": name,
+        "subject": subject,
+        "list_id": list_id,
+        "message": "Campaign created with list and message configured.",
+    })
+
+
+@mcp.tool()
+async def send_campaign(campaign_id: str) -> str:
+    """Send a campaign immediately. The campaign must have a list and message configured."""
+    ac = get_client()
+    # Set status to sending (status=5 in AC)
+    data = await ac.put(
+        f"/campaigns/{campaign_id}",
+        json={"campaign": {"status": "5"}},
+    )
+    c = data.get("campaign", {})
+    return _fmt({
+        "id": c.get("id", ""),
+        "status": c.get("status", ""),
+        "message": "Campaign queued for sending.",
+    })
+
+
+# ============================================================================
+# FORMS (lead capture)
+# ============================================================================
+
+
+@mcp.tool()
+async def list_forms(limit: int = 20, offset: int = 0) -> str:
+    """List all forms -- sign-up forms, inline forms, and pop-ups for lead capture."""
+    ac = get_client()
+    data = await ac.get("/forms", params={"limit": min(limit, 100), "offset": offset})
+    forms = []
+    for f in data.get("forms", []):
+        forms.append({
+            "id": f.get("id", ""),
+            "name": f.get("name", ""),
+            "action": f.get("action", ""),
+            "style": f.get("style", ""),
+            "submit_button_text": f.get("button", ""),
+            "submissions": f.get("entries", "0"),
+            "created_at": f.get("cdate", ""),
+            "updated_at": f.get("udate", ""),
+        })
+    return _fmt({"total": _total(data), "forms": forms})
+
+
+@mcp.tool()
+async def get_form(form_id: str) -> str:
+    """Get details for a specific form including configuration and submission count."""
+    ac = get_client()
+    data = await ac.get(f"/forms/{form_id}")
+    f = data.get("form", {})
+    return _fmt({
+        "id": f.get("id", ""),
+        "name": f.get("name", ""),
+        "action": f.get("action", ""),
+        "style": f.get("style", ""),
+        "submit_button_text": f.get("button", ""),
+        "submissions": f.get("entries", "0"),
+        "layout": f.get("layout", ""),
+        "thanks": f.get("thanks", ""),
+        "created_at": f.get("cdate", ""),
+        "updated_at": f.get("udate", ""),
+    })
+
+
+# ============================================================================
+# GOALS (conversion tracking)
+# ============================================================================
+
+
+@mcp.tool()
+async def list_goals(limit: int = 20, offset: int = 0) -> str:
+    """List goals -- conversion events tied to automations (e.g. 'made a purchase', 'visited pricing')."""
+    ac = get_client()
+    data = await ac.get("/goals", params={"limit": min(limit, 100), "offset": offset})
+    goals = []
+    for g in data.get("goals", []):
+        goals.append({
+            "id": g.get("id", ""),
+            "name": g.get("name", ""),
+            "type": g.get("goaltype", ""),
+            "group": g.get("group", ""),
+            "created_at": g.get("cdate", ""),
+        })
+    return _fmt({"total": _total(data), "goals": goals})
+
+
+# ============================================================================
+# DEAL CUSTOM FIELDS
+# ============================================================================
+
+
+@mcp.tool()
+async def list_deal_custom_fields(limit: int = 100, offset: int = 0) -> str:
+    """List custom fields available on deals -- pipeline-specific data points."""
+    ac = get_client()
+    data = await ac.get(
+        "/dealCustomFieldMeta",
+        params={"limit": min(limit, 100), "offset": offset},
+    )
+    fields = []
+    for f in data.get("dealCustomFieldMeta", []):
+        fields.append({
+            "id": f.get("id", ""),
+            "label": f.get("fieldLabel", ""),
+            "type": f.get("fieldType", ""),
+            "options": f.get("fieldOptions", ""),
+            "default_value": f.get("fieldDefault", ""),
+            "is_required": f.get("isRequired", "0"),
+        })
+    return _fmt({"total": _total(data), "fields": fields})
+
+
+@mcp.tool()
+async def set_deal_custom_field(deal_id: str, field_id: str, value: str) -> str:
+    """Set a custom field value on a deal."""
+    ac = get_client()
+    data = await ac.post(
+        "/dealCustomFieldData",
+        json={
+            "dealCustomFieldDatum": {
+                "dealId": deal_id,
+                "customFieldId": field_id,
+                "fieldValue": value,
+            }
+        },
+    )
+    fv = data.get("dealCustomFieldDatum", {})
+    return _fmt({
+        "id": fv.get("id", ""),
+        "deal_id": deal_id,
+        "field_id": field_id,
+        "value": value,
+        "message": "Deal custom field value set.",
+    })
+
+
+# ============================================================================
+# TEMPLATES
+# ============================================================================
+
+
+@mcp.tool()
+async def list_templates(limit: int = 20, offset: int = 0) -> str:
+    """List email templates available for campaigns."""
+    ac = get_client()
+    data = await ac.get("/templates", params={"limit": min(limit, 100), "offset": offset})
+    templates = []
+    for t in data.get("templates", []):
+        templates.append({
+            "id": t.get("id", ""),
+            "name": t.get("name", ""),
+            "subject": t.get("subject", ""),
+            "hidden": t.get("hidden", "0"),
+            "created_at": t.get("cdate", ""),
+            "updated_at": t.get("mdate", ""),
+        })
+    return _fmt({"total": _total(data), "templates": templates})
+
+
+# ============================================================================
+# CONTACT TAGS (list current tags on a contact)
+# ============================================================================
+
+
+@mcp.tool()
+async def list_contact_tags(contact_id: str) -> str:
+    """List all tags currently on a contact -- see how this person is categorized."""
+    ac = get_client()
+    data = await ac.get(
+        "/contacts/{}/contactTags".format(contact_id),
+        params={"limit": 100},
+    )
+    tags = []
+    for ct in data.get("contactTags", []):
+        tags.append({
+            "contact_tag_id": ct.get("id", ""),
+            "tag_id": ct.get("tag", ""),
+            "contact_id": ct.get("contact", ""),
+            "created_at": ct.get("cdate", ""),
+        })
+    return _fmt({"contact_id": contact_id, "total": len(tags), "tags": tags})
 
 
 # ============================================================================
