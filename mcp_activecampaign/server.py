@@ -1,4 +1,4 @@
-"""MCP server for the ActiveCampaign API — 30+ tools."""
+"""MCP server for the ActiveCampaign API — 51 tools."""
 
 import json
 import os
@@ -12,8 +12,9 @@ mcp = FastMCP(
     "mcp-activecampaign",
     instructions=(
         "Production-grade MCP server for the ActiveCampaign API. "
-        "30+ tools for contacts, deals, tags, lists, automations, "
-        "pipelines, campaigns, custom fields, accounts, and webhooks."
+        "51 tools for contacts, deals, tags, lists, automations, "
+        "pipelines, campaigns, custom fields, accounts, webhooks, "
+        "notes, tasks, event tracking, ecommerce, and bulk operations."
     ),
 )
 
@@ -795,6 +796,424 @@ async def delete_webhook(webhook_id: str) -> str:
     ac = get_client()
     await ac.delete(f"/webhooks/{webhook_id}")
     return _fmt({"webhook_id": webhook_id, "message": "Webhook deleted."})
+
+
+# ============================================================================
+# CONTACT NOTES (CRM)
+# ============================================================================
+
+
+@mcp.tool()
+async def list_contact_notes(contact_id: str, limit: int = 20, offset: int = 0) -> str:
+    """List notes on a contact -- CRM-style internal notes attached to a person."""
+    ac = get_client()
+    data = await ac.get(
+        f"/contacts/{contact_id}/notes",
+        params={"limit": min(limit, 100), "offset": offset},
+    )
+    notes = []
+    for n in data.get("notes", []):
+        notes.append({
+            "id": n.get("id", ""),
+            "note": n.get("note", ""),
+            "created_by": n.get("userid", ""),
+            "created_at": n.get("cdate", ""),
+            "updated_at": n.get("mdate", ""),
+        })
+    return _fmt({"contact_id": contact_id, "total": _total(data), "notes": notes})
+
+
+@mcp.tool()
+async def add_contact_note(contact_id: str, note: str) -> str:
+    """Add a note to a contact -- useful for logging calls, meetings, or follow-ups."""
+    ac = get_client()
+    data = await ac.post(
+        f"/contacts/{contact_id}/notes",
+        json={"note": {"note": note}},
+    )
+    n = data.get("note", {})
+    return _fmt({
+        "id": n.get("id", ""),
+        "contact_id": contact_id,
+        "note": n.get("note", ""),
+        "created_at": n.get("cdate", ""),
+        "message": "Note added.",
+    })
+
+
+# ============================================================================
+# DEAL NOTES
+# ============================================================================
+
+
+@mcp.tool()
+async def list_deal_notes(deal_id: str, limit: int = 20, offset: int = 0) -> str:
+    """List notes on a deal -- internal annotations for the sales pipeline."""
+    ac = get_client()
+    data = await ac.get(
+        f"/deals/{deal_id}/notes",
+        params={"limit": min(limit, 100), "offset": offset},
+    )
+    notes = []
+    for n in data.get("notes", []):
+        notes.append({
+            "id": n.get("id", ""),
+            "note": n.get("note", ""),
+            "created_by": n.get("userid", ""),
+            "created_at": n.get("cdate", ""),
+        })
+    return _fmt({"deal_id": deal_id, "total": _total(data), "notes": notes})
+
+
+@mcp.tool()
+async def add_deal_note(deal_id: str, note: str) -> str:
+    """Add a note to a deal -- log updates, negotiation details, or next steps."""
+    ac = get_client()
+    data = await ac.post(
+        f"/deals/{deal_id}/notes",
+        json={"note": {"note": note}},
+    )
+    n = data.get("note", {})
+    return _fmt({
+        "id": n.get("id", ""),
+        "deal_id": deal_id,
+        "note": n.get("note", ""),
+        "message": "Deal note added.",
+    })
+
+
+# ============================================================================
+# TASKS (CRM)
+# ============================================================================
+
+
+@mcp.tool()
+async def list_tasks(limit: int = 20, offset: int = 0, deal_id: str = "", contact_id: str = "") -> str:
+    """List CRM tasks. Optionally filter by deal_id or contact_id."""
+    ac = get_client()
+    params: dict[str, Any] = {"limit": min(limit, 100), "offset": offset}
+    if deal_id:
+        params["filters[dealTasktype]"] = "1"
+        params["filters[relid]"] = deal_id
+    data = await ac.get("/dealTasks", params=params)
+    tasks = []
+    for t in data.get("dealTasks", []):
+        tasks.append({
+            "id": t.get("id", ""),
+            "title": t.get("title", ""),
+            "note": t.get("note", ""),
+            "due_date": t.get("duedate", ""),
+            "status": t.get("status", ""),
+            "deal_id": t.get("relid", ""),
+            "assignee": t.get("assignee", ""),
+            "type": t.get("dealTasktype", ""),
+            "created_at": t.get("cdate", ""),
+        })
+    return _fmt({"total": _total(data), "tasks": tasks})
+
+
+@mcp.tool()
+async def create_task(
+    title: str,
+    deal_id: str,
+    due_date: str = "",
+    note: str = "",
+    task_type: str = "1",
+    assignee_id: str = "",
+) -> str:
+    """Create a CRM task on a deal. due_date: ISO 8601 (e.g. '2026-04-10T14:00:00'). task_type: 1=call, 2=email, 3=to-do."""
+    ac = get_client()
+    task: dict[str, Any] = {
+        "title": title,
+        "relid": deal_id,
+        "reltype": "deal",
+        "dealTasktype": task_type,
+        "status": "0",
+    }
+    if due_date:
+        task["duedate"] = due_date
+    if note:
+        task["note"] = note
+    if assignee_id:
+        task["assignee"] = assignee_id
+    data = await ac.post("/dealTasks", json={"dealTask": task})
+    t = data.get("dealTask", {})
+    return _fmt({
+        "id": t.get("id", ""),
+        "title": t.get("title", ""),
+        "deal_id": deal_id,
+        "due_date": t.get("duedate", ""),
+        "message": "Task created.",
+    })
+
+
+@mcp.tool()
+async def update_task(
+    task_id: str,
+    title: str = "",
+    due_date: str = "",
+    note: str = "",
+    status: str = "",
+) -> str:
+    """Update a CRM task. status: 0=incomplete, 1=complete."""
+    ac = get_client()
+    task: dict[str, Any] = {}
+    if title:
+        task["title"] = title
+    if due_date:
+        task["duedate"] = due_date
+    if note:
+        task["note"] = note
+    if status:
+        task["status"] = status
+    if not task:
+        return "No fields provided to update."
+    data = await ac.put(f"/dealTasks/{task_id}", json={"dealTask": task})
+    t = data.get("dealTask", {})
+    return _fmt({
+        "id": t.get("id", ""),
+        "title": t.get("title", ""),
+        "status": t.get("status", ""),
+        "message": "Task updated.",
+    })
+
+
+@mcp.tool()
+async def delete_task(task_id: str) -> str:
+    """Delete a CRM task."""
+    ac = get_client()
+    await ac.delete(f"/dealTasks/{task_id}")
+    return _fmt({"task_id": task_id, "message": "Task deleted."})
+
+
+# ============================================================================
+# LIST MEMBERSHIP (subscribe/unsubscribe)
+# ============================================================================
+
+
+@mcp.tool()
+async def subscribe_contact_to_list(contact_id: str, list_id: str, status: str = "1") -> str:
+    """Subscribe a contact to a list. status: 1=subscribed, 2=unsubscribed."""
+    ac = get_client()
+    data = await ac.post(
+        "/contactLists",
+        json={"contactList": {"list": list_id, "contact": contact_id, "status": status}},
+    )
+    cl = data.get("contactList", {})
+    return _fmt({
+        "contact_id": contact_id,
+        "list_id": list_id,
+        "status": cl.get("status", ""),
+        "message": "Contact subscribed to list.",
+    })
+
+
+@mcp.tool()
+async def unsubscribe_contact_from_list(contact_id: str, list_id: str) -> str:
+    """Unsubscribe a contact from a list."""
+    ac = get_client()
+    data = await ac.post(
+        "/contactLists",
+        json={"contactList": {"list": list_id, "contact": contact_id, "status": "2"}},
+    )
+    return _fmt({
+        "contact_id": contact_id,
+        "list_id": list_id,
+        "message": "Contact unsubscribed from list.",
+    })
+
+
+# ============================================================================
+# AUTOMATION MANAGEMENT (remove, list contact automations)
+# ============================================================================
+
+
+@mcp.tool()
+async def remove_contact_from_automation(contact_automation_id: str) -> str:
+    """Remove a contact from an automation. Get the contact_automation_id from list_contact_automations."""
+    ac = get_client()
+    await ac.delete(f"/contactAutomations/{contact_automation_id}")
+    return _fmt({"contact_automation_id": contact_automation_id, "message": "Contact removed from automation."})
+
+
+@mcp.tool()
+async def list_contact_automations(contact_id: str) -> str:
+    """List all automations a contact is currently enrolled in."""
+    ac = get_client()
+    data = await ac.get(
+        "/contactAutomations",
+        params={"filters[contact]": contact_id, "limit": 100},
+    )
+    automations = []
+    for ca in data.get("contactAutomations", []):
+        automations.append({
+            "id": ca.get("id", ""),
+            "automation_id": ca.get("automation", ""),
+            "status": ca.get("status", ""),
+            "add_date": ca.get("adddate", ""),
+            "last_date": ca.get("lastdate", ""),
+            "completed": ca.get("completedElements", "0"),
+            "total_elements": ca.get("totalElements", "0"),
+        })
+    return _fmt({"contact_id": contact_id, "total": len(automations), "automations": automations})
+
+
+# ============================================================================
+# EVENT TRACKING
+# ============================================================================
+
+
+@mcp.tool()
+async def track_event(event_name: str, contact_email: str, event_data: str = "") -> str:
+    """Track a custom event for a contact -- triggers behavior-based automations. event_data: optional value string."""
+    ac = get_client()
+    # AC event tracking uses a different endpoint pattern
+    data = await ac.post(
+        "/tracking/event",
+        json={"event": event_name, "email": contact_email, "eventdata": event_data},
+    )
+    return _fmt({
+        "event": event_name,
+        "email": contact_email,
+        "message": "Event tracked.",
+    })
+
+
+@mcp.tool()
+async def track_site_event(contact_email: str, url: str) -> str:
+    """Track a site visit for a contact -- logs that they visited a specific URL."""
+    ac = get_client()
+    data = await ac.post(
+        "/tracking/site",
+        json={"email": contact_email, "url": url},
+    )
+    return _fmt({
+        "email": contact_email,
+        "url": url,
+        "message": "Site visit tracked.",
+    })
+
+
+# ============================================================================
+# ECOMMERCE
+# ============================================================================
+
+
+@mcp.tool()
+async def list_ecommerce_connections(limit: int = 20) -> str:
+    """List connected e-commerce platforms (Shopify, WooCommerce, BigCommerce, etc.)."""
+    ac = get_client()
+    data = await ac.get("/connections", params={"limit": min(limit, 100)})
+    connections = []
+    for c in data.get("connections", []):
+        connections.append({
+            "id": c.get("id", ""),
+            "name": c.get("name", ""),
+            "service": c.get("service", ""),
+            "external_id": c.get("externalid", ""),
+            "status": c.get("status", ""),
+            "link_url": c.get("linkUrl", ""),
+            "is_internal": c.get("isInternal", ""),
+        })
+    return _fmt({"total": _total(data), "connections": connections})
+
+
+@mcp.tool()
+async def list_ecommerce_orders(
+    limit: int = 20,
+    offset: int = 0,
+    email: str = "",
+    connection_id: str = "",
+) -> str:
+    """List e-commerce orders. Filter by customer email or connection_id for revenue tracking."""
+    ac = get_client()
+    params: dict[str, Any] = {"limit": min(limit, 100), "offset": offset}
+    if email:
+        params["filters[email]"] = email
+    if connection_id:
+        params["filters[connectionid]"] = connection_id
+    data = await ac.get("/ecomOrders", params=params)
+    orders = []
+    for o in data.get("ecomOrders", []):
+        orders.append({
+            "id": o.get("id", ""),
+            "external_id": o.get("externalid", ""),
+            "email": o.get("email", ""),
+            "total_price": o.get("totalPrice", "0"),
+            "currency": o.get("currency", ""),
+            "order_number": o.get("orderNumber", ""),
+            "order_date": o.get("orderDate", ""),
+            "connection_id": o.get("connectionid", ""),
+            "source": o.get("source", ""),
+            "created_at": o.get("createdDate", ""),
+        })
+    return _fmt({"total": _total(data), "orders": orders})
+
+
+@mcp.tool()
+async def get_ecommerce_order(order_id: str) -> str:
+    """Get full details for a specific e-commerce order including line items."""
+    ac = get_client()
+    data = await ac.get(f"/ecomOrders/{order_id}")
+    o = data.get("ecomOrder", {})
+    products = []
+    for p in data.get("ecomOrderProducts", []):
+        products.append({
+            "name": p.get("name", ""),
+            "price": p.get("price", "0"),
+            "quantity": p.get("quantity", "0"),
+            "sku": p.get("sku", ""),
+            "category": p.get("category", ""),
+        })
+    return _fmt({
+        "id": o.get("id", ""),
+        "external_id": o.get("externalid", ""),
+        "email": o.get("email", ""),
+        "total_price": o.get("totalPrice", "0"),
+        "currency": o.get("currency", ""),
+        "order_number": o.get("orderNumber", ""),
+        "order_url": o.get("orderUrl", ""),
+        "order_date": o.get("orderDate", ""),
+        "shipping_method": o.get("shippingMethod", ""),
+        "products": products,
+    })
+
+
+# ============================================================================
+# BULK OPERATIONS
+# ============================================================================
+
+
+@mcp.tool()
+async def bulk_import_contacts(contacts_json: str, list_id: str = "", tag_id: str = "") -> str:
+    """Bulk import contacts. contacts_json: JSON array of {email, first_name, last_name, phone}. Optionally add to a list or tag."""
+    ac = get_client()
+    import json as _json
+    try:
+        contacts = _json.loads(contacts_json)
+    except _json.JSONDecodeError:
+        return "Invalid JSON. Provide an array of {email, first_name, last_name} objects."
+    if not isinstance(contacts, list):
+        return "contacts_json must be a JSON array."
+    payload: dict[str, Any] = {"contacts": []}
+    for c in contacts[:250]:
+        entry: dict[str, Any] = {"email": c.get("email", "")}
+        if c.get("first_name"):
+            entry["first_name"] = c["first_name"]
+        if c.get("last_name"):
+            entry["last_name"] = c["last_name"]
+        if c.get("phone"):
+            entry["phone"] = c["phone"]
+        payload["contacts"].append(entry)
+    if list_id:
+        payload["list"] = list_id
+    if tag_id:
+        payload["tag"] = tag_id
+    data = await ac.post("/import/bulk_import", json=payload)
+    return _fmt({
+        "queued": len(payload["contacts"]),
+        "message": data.get("message", "Bulk import queued."),
+    })
 
 
 # ============================================================================
