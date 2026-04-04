@@ -1,0 +1,11 @@
+version: 1
+name: activecampaign
+runtime: python
+entry: mcp_activecampaign/server.py
+
+build:
+  install: pip install -r requirements.txt
+
+startCommand:
+  type: http
+  command: python -m mcp_activecampaign.server
